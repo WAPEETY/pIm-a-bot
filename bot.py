@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.exc import NoResultFound
 
 #open the file containing the API key env.json
-with open('env.json') as f:
+with open('config/env.json') as f:
     api_key = json.load(f)['API_KEY']
 
 bot = telebot.TeleBot(api_key,exception_handler=exception_handler.ExceptionHandler())
@@ -77,10 +77,22 @@ for file in os.listdir('questions'):
 
 @bot.message_handler(func=lambda message: True)
 def response(message):
-    print("response generated")
-    if(db.is_in_quiz(message.from_user.id)):
-        qh.check(message)
-    else:
-        bot.reply_to(message, "You're not in a match")
+            
+    try: 
+        qh.handle_question(message, True)
+        qh.handle_question(message)
+    except Exception as e:
+
+        db.rollback()
+        
+        #TODO: Handle the error in a better way
+        
+        #if isinstance(e, IntegrityError):
+        #    
+        #    bot.send_message(message.from_user.id, "Stai giá compilando un quiz! Usa /leave per abbandonarlo e iniziarne un altro")
+        #    return
+        #else:
+        #    bot.send_message(message.from_user.id, "500 - Internal Error")
+        #    return
 
 bot.polling()

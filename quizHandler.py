@@ -54,6 +54,7 @@ class QuizHandler:
             id = id % length
 
         question = questions[id]
+        self.db.set_last_question(user_id, id)
         return question
     
     def sanitize_filename(self, filename):
@@ -62,21 +63,24 @@ class QuizHandler:
         whitelist = re.compile(r'[a-zA-z]+')
         return whitelist.findall(filename)[0]
 
-    def handle_question(self,message):
+    def handle_question(self,message, resp = False):
         quiz = self.db.get_quiz(message.from_user.id)
         filename = self.sanitize_filename(quiz.filename)
         
         if(filename is not None):
-            question = self.open_file_and_get_question(filename, user_id=message.from_user.id)
+            question = self.open_file_and_get_question(filename, id= quiz.last_question if resp else None, user_id=message.from_user.id)
             try:
                 if question is not None:
-                    self.send_question(message, question)
+                    if(resp):
+                        self.check_question(message, question)
+                    else:
+                        self.send_question(message, question)
             except Exception as e:
                 print(e)
                 self.bot.send_message(message.from_user.id, "404 - File not found")
                 return
         else:
-            self.bot.send_message(message.from_user.id, "401 - Non risulta nessun quiz attivo")
+            self.bot.send_message(message.from_user.id, "500 - Errore nella gestione del quiz")
 
     def analyze_question(self,question):
 
@@ -126,8 +130,6 @@ class QuizHandler:
     def send_question(self,message,question):
         qtype = self.analyze_question(question)
 
-        print("qtype: ", qtype)
-
         if qtype == question_type_enum["text"] or qtype == question_type_enum["image_in_question"]:
             buffer = question['quest']
 
@@ -170,48 +172,21 @@ class QuizHandler:
                 else:
                     self.decode_and_send_image(message,answer['image'],str(i + 1) + ")",max_length_image)
 
-    def check(self,message):
-        pass
-
-'''
-    def check(self,message):
-        quiz = self.db.get_quiz(message.from_user.id)
+    def check_question(self,message, question):
+        try:
+            answer = int(message.text)
+        except ValueError:
+            self.bot.send_message(message.from_user.id, "Risposta non valida")
+            return False
         
-        filename = quiz.filename
-        
-        if filename is not None:
-            
-            question = self.open_file_and_get_question(filename)
-
-
-
-            try:
-                with open('questions/' + filename + '.json') as f:
-                    questions = json.load(f)
-
-                    last_question = quiz.last_question
-                    if last_question is None or last_question >= len(questions):
-                        self.bot.reply_to(message, "500 - Internal Error")
-
-                    question = questions[last_question]
-                    
-                    try:
-                        answer = int(message.text)
-                    except ValueError:
-                        self.bot.reply_to(message, "Invalid answer")
-                        return
-                    
-                    answer -= 1
-
-                    if(question['correct'] == answer):
-                        quiz.correct_answers += 1
-                        self.bot.reply_to(message, "Correct")
-
-            except Exception as e:
-                self.bot.reply_to(message, "404 - File not found")
-                return
-
+        if(answer == 0):
+            self.db.add_not_answered(message.from_user.id)
+            self.bot.send_message(message.from_user.id, "Non risposto")
+        elif(question['correct'] == answer):
+            self.db.add_correct_answer(message.from_user.id)
+            self.bot.send_message(message.from_user.id, "Corretto")
         else:
-            self.bot.reply_to(message, "You're not in a match")
-        return
-'''
+            self.db.add_wrong_answer(message.from_user.id)
+            self.bot.send_message(message.from_user.id, "Sbagliato")
+        
+        return True

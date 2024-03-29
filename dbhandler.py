@@ -151,5 +151,25 @@ class DBHandler:
     def close_connection(self):
         self.conn.close()
 
+    def set_last_question(self, user_id, last_question):
+        quiz = self.session.query(Quiz).filter(Quiz.user_id == user_id).filter(Quiz.terminated == False).one()
+        quiz.last_question = last_question
+        self.session.commit()
+
+    def add_correct_answer(self, user_id):
+        quiz = self.session.query(Quiz).filter(Quiz.user_id == user_id).filter(Quiz.terminated == False).one()
+        quiz.correct_answers += 1
+        self.session.commit()
+
+    def add_wrong_answer(self, user_id):
+        quiz = self.session.query(Quiz).filter(Quiz.user_id == user_id).filter(Quiz.terminated == False).one()
+        quiz.wrong_answers += 1
+        self.session.commit()
+    
+    def add_not_answered(self, user_id):
+        quiz = self.session.query(Quiz).filter(Quiz.user_id == user_id).filter(Quiz.terminated == False).one()
+        quiz.not_answered += 1
+        self.session.commit()
+
     def __del__(self):
         self.session.close()
