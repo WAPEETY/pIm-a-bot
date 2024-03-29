@@ -1,0 +1,9 @@
+pIm-env
+.env
+env.json
+__pycache__
+*.db
+config/motd.txt
+.vscode/
+questions/*
+!questions/.placeholder

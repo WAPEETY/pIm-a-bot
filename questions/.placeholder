@@ -1,0 +1,4 @@
+## this is just a placeholder file to make sure the config directory is included in the repository
+## put in here all the json files for the questions
+## the name of the file is the command that will trigger the exam
+## Example: if the file is called "foo.json" the command to trigger the questions inside will be "foo"
