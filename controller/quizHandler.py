@@ -96,7 +96,7 @@ class QuizHandler:
                     "image": "base64image"
                 }
             ],
-            "correct": 0,
+            "correct": 1, (starting from 1 since 0 is for not answered questions)
         }
         '''
 

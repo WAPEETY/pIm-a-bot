@@ -6,6 +6,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Column, Integer, String, ForeignKey, Boolean
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.exc import NoResultFound
+from sqlalchemy.orm import relationship
+
 from datetime import datetime
 
 Base = declarative_base()
@@ -15,6 +17,7 @@ class User(Base):
     user_id = Column(Integer, primary_key=True)
     registration_date = Column(String)
     streak = Column(Integer)
+    quizzes = relationship("Quiz", backref="user", cascade="all, delete-orphan")
     
     def __repr__(self):
         return "<User(user_id='%s', registration_date='%s', streak='%s')>" % \
@@ -23,7 +26,7 @@ class User(Base):
 class Quiz(Base):
     __tablename__ = 'quizzes'
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey('users.user_id'))
+    user_id = Column(Integer, ForeignKey('users.user_id'), nullable=False)
     filename = Column(String)
     correct_answers = Column(Integer)
     wrong_answers = Column(Integer)
@@ -54,6 +57,10 @@ class DBHandler:
     def create_connection(self):
         self.conn = sqlite3.connect(self.db_name)
         self.cursor = self.conn.cursor()
+        
+        self.cursor.execute('''
+            PRAGMA foreign_keys = ON
+        ''')
         
         # schema creation, should be handled better to archieve the possibility of painless migrations
         self.cursor.execute('''
@@ -89,10 +96,6 @@ class DBHandler:
         ''')
 
         self.cursor.execute('''
-            PRAGMA foreign_keys = ON
-        ''')
-
-        self.cursor.execute('''
             CREATE TRIGGER IF NOT EXISTS check_quiz BEFORE INSERT ON quizzes
             BEGIN
                 SELECT CASE WHEN EXISTS(SELECT 1 FROM quizzes WHERE user_id = NEW.user_id AND terminated = 0) THEN
@@ -113,20 +116,25 @@ class DBHandler:
             return "User already exists"
 
     def start_quiz(self, user_id, quiz_filename):          
-            quiz = Quiz(user_id=user_id, filename=quiz_filename, correct_answers=0, wrong_answers=0, not_answered=0, terminated=False)
+        quiz = Quiz(user_id=user_id, filename=quiz_filename, correct_answers=0, wrong_answers=0, not_answered=0, terminated=False)
 
-            self.session.add(quiz)
-            self.session.commit()
+        self.session.add(quiz)
+        self.session.commit()
 
     def delete_user(self, user_id):
-            user = self.session.query(User).filter(User.user_id == user_id).one()
-            self.session.delete(user)
-            self.session.commit()
+        #since SQLite is shit and doesn't seem to support ON DELETE CASCADE we have to do this manually
+        self.session.query(Quiz).filter(Quiz.user_id == user_id).delete()
+        self.session.query(User).filter(User.user_id == user_id).delete()
+        
+        self.session.commit()
+
+    def get_all_users(self):
+        return self.session.query(User)
 
     def end_match(self, user_id):
-            quiz = self.session.query(Quiz).filter(Quiz.user_id == user_id).filter(Quiz.terminated == False).one()
-            quiz.terminated = True
-            self.session.commit()
+        quiz = self.session.query(Quiz).filter(Quiz.user_id == user_id).filter(Quiz.terminated == False).one()
+        quiz.terminated = True
+        self.session.commit()
         
     def is_in_quiz(self, user_id):
         try:

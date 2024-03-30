@@ -1,18 +1,22 @@
 import telebot
 import os
-import dbhandler
-import quizHandler
-import exception_handler
 import json
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.exc import NoResultFound
 
+import controller.dbHandler as dbHandler
+import controller.quizHandler as quizHandler
+import controller.exceptionHandler as exceptionHandler
+import controller.spamHandler as spamHandler
+
 #open the file containing the API key env.json
 with open('config/env.json') as f:
-    api_key = json.load(f)['API_KEY']
+    data = json.load(f)
+    api_key = data['API_KEY']
+    admin_id = data['ADMIN_ID']
 
-bot = telebot.TeleBot(api_key,exception_handler=exception_handler.ExceptionHandler())
-db = dbhandler.DBHandler('pIm-a-bot.db')
+bot = telebot.TeleBot(api_key,exception_handler=exceptionHandler.ExceptionHandler())
+db = dbHandler.DBHandler('pIm-a-bot.db')
 qh = quizHandler.QuizHandler(db, bot)
 
 db.create_connection()
@@ -51,6 +55,19 @@ def unregister(message):
     db.delete_user(message.from_user.id)
     bot.reply_to(message, "Ci dispiace vederti andare via, i tuoi dati sono stati cancellati.")
 
+@bot.message_handler(commands=['spam'])
+def spam(message):
+    if(str(message.from_user.id) == admin_id):
+        text = message.text
+        text = text.replace('/spam', '')
+        
+        if(text == ''):
+            bot.reply_to(message, "Devi inserire un messaggio da inviare!")
+            return
+        
+        text = text[1:]
+        spamHandler.spam(bot, text)        
+
 for file in os.listdir('questions'):
     if file.endswith('.json'):
 
@@ -82,17 +99,8 @@ def response(message):
         qh.handle_question(message, True)
         qh.handle_question(message)
     except Exception as e:
-
         db.rollback()
-        
-        #TODO: Handle the error in a better way
-        
-        #if isinstance(e, IntegrityError):
-        #    
-        #    bot.send_message(message.from_user.id, "Stai giá compilando un quiz! Usa /leave per abbandonarlo e iniziarne un altro")
-        #    return
-        #else:
-        #    bot.send_message(message.from_user.id, "500 - Internal Error")
-        #    return
+        print(e)        
+        bot.send_message(message.from_user.id, "500 - Internal Error")
 
 bot.polling()
