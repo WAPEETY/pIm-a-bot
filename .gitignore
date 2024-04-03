@@ -1,4 +1,5 @@
 pIm-env
+.venv/
 .env
 env.json
 __pycache__
