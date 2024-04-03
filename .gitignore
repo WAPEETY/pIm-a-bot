@@ -8,3 +8,4 @@ config/motd.txt
 .vscode/
 questions/*
 !questions/.placeholder
+.idea
