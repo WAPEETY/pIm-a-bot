@@ -7,3 +7,4 @@ config/motd.txt
 .vscode/
 questions/*
 !questions/.placeholder
+!questions/example.json

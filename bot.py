@@ -9,11 +9,16 @@ import controller.quizHandler as quizHandler
 import controller.exceptionHandler as exceptionHandler
 import controller.spamHandler as spamHandler
 
-#open the file containing the API key env.json
-with open('config/env.json') as f:
-    data = json.load(f)
-    api_key = data['API_KEY']
-    admin_id = data['ADMIN_ID']
+#configuration available both from the env file and in the environment variables
+try:
+    with open('config/env.json') as f:
+        data = json.load(f)
+        api_key = data['API_KEY']
+        admin_id = data['ADMIN_ID']
+except Exception as e:
+    api_key = os.environ['API_KEY']
+    admin_id = os.environ['ADMIN_ID']
+
 
 bot = telebot.TeleBot(api_key,exception_handler=exceptionHandler.ExceptionHandler())
 db = dbHandler.DBHandler('pIm-a-bot.db')
