@@ -5,6 +5,7 @@ jobs:
   push_to_registry:
     name: push docker image to hub
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
     steps:
       - name: check repository
         uses: actions/checkout@v4
