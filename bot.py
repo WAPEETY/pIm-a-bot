@@ -11,7 +11,7 @@ import controller.spamHandler as spamHandler
 
 #configuration available both from the env file and in the environment variables
 try:
-    with open('config/env.json') as f:
+    with open('data/config/env.json') as f:
         data = json.load(f)
         api_key = data['API_KEY']
         admin_id = data['ADMIN_ID']
@@ -32,7 +32,7 @@ def start_bot(message):
     
     try:
 
-        with open('config/motd.txt', 'r') as motd:
+        with open('data/config/motd.txt', 'r') as motd:
             motd_content = motd.read()
         bot.send_message(message.from_user.id, motd_content)
         #TODO: Add a motd controller to customize the motd (something like a jinja template engine)
@@ -73,7 +73,7 @@ def spam(message):
         text = text[1:]
         spamHandler.spam(bot, text)        
 
-for file in os.listdir('questions'):
+for file in os.listdir('data/questions'):
     if file.endswith('.json'):
 
         command = file.split('.')[0]

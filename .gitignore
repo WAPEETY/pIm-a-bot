@@ -4,9 +4,9 @@ pIm-env
 env.json
 __pycache__
 *.db
-config/motd.txt
+data/config/motd.txt
 .vscode/
-questions/*
-!questions/.placeholder
-!questions/example.json
+data/questions/*
+!data/questions/.placeholder
+!data/questions/example.json
 .idea

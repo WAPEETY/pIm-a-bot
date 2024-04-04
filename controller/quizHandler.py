@@ -32,7 +32,7 @@ class QuizHandler:
         filename = self.sanitize_filename(filename)
         questions = None
     
-        with open('questions/' + filename + '.json') as f:
+        with open('data/questions/' + filename + '.json') as f:
             questions = json.load(f)
             
         length = len(questions)

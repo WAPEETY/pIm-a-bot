@@ -49,13 +49,13 @@ class DBVersion(Base):
 class DBHandler:
     def __init__(self, db_name):
         self.db_name = db_name
-        self.engine = create_engine('sqlite:///' + db_name, echo=True)
+        self.engine = create_engine('sqlite:///data/' + db_name, echo=True)
         self.Session = sessionmaker(bind=self.engine)
         self.session = self.Session()
         Base.metadata.create_all(self.engine)
 
     def create_connection(self):
-        self.conn = sqlite3.connect(self.db_name)
+        self.conn = sqlite3.connect('data/' + self.db_name)
         self.cursor = self.conn.cursor()
         
         self.cursor.execute('''
