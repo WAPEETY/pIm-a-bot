@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  goaccess:
+    image: 'wapeety/pim-a-bot:latest'
+    container_name: so-un-bot
+    restart: unless-stopped
+    environment:
+        - API_KEY=your-very-secret-token
+        - ADMIN_ID=your-telegram-id
+    volumes:
+      - "/path/to/data:/app/data"
