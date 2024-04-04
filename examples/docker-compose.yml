@@ -1,6 +1,6 @@
 version: '3.8'
 services:
-  goaccess:
+  pim-a-bot:
     image: 'wapeety/pim-a-bot:latest'
     container_name: so-un-bot
     restart: unless-stopped
