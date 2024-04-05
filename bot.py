@@ -22,6 +22,7 @@ except Exception as e:
 bot = telebot.TeleBot(api_key, exception_handler=exceptionHandler.ExceptionHandler())
 db = dbHandler.DBHandler('pIm-a-bot.db')
 qh = quizHandler.QuizHandler(db, bot)
+spammer = spamHandler.spamHandler(bot, db)
 
 db.create_connection()
 
@@ -75,7 +76,7 @@ def spam(message):
             return
 
         text = text[1:]
-        spamHandler.spam(bot, text)
+        spammer.spam(text)
 
 
 cmds = []
@@ -109,11 +110,16 @@ def start_match(message):
 @bot.message_handler(func=lambda message: True)
 def response(message):
     try:
-        qh.handle_question(message, True)
-        qh.handle_question(message)
+        if(qh.handle_question(message, True)):
+            qh.handle_question(message)
+        else:
+            bot.send_message(message.from_user.id, "Riprova")
     except Exception as e:
         db.rollback()
         print(e)
+        if(isinstance(e, NoResultFound)):
+            bot.send_message(message.from_user.id, "Non ho capito, usa /start per vedere i quiz disponibili")
+            return
         bot.send_message(message.from_user.id, "500 - Internal Error")
 
 

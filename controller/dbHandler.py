@@ -149,12 +149,10 @@ class DBHandler:
         self.session.rollback()
         
     def get_quiz(self, user_id):
-        try:
-            quiz = self.session.query(Quiz).filter(Quiz.user_id == user_id).filter(Quiz.terminated == False).one()
-            return quiz
-        except NoResultFound:
-            self.session.rollback()
-            return "404 - not found"
+        
+        quiz = self.session.query(Quiz).filter(Quiz.user_id == user_id).filter(Quiz.terminated == False).one()
+        return quiz
+        
 
     def close_connection(self):
         self.conn.close()
