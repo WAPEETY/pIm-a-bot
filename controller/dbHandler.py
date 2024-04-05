@@ -7,6 +7,7 @@ from sqlalchemy import Column, Integer, String, ForeignKey, Boolean
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
 from datetime import datetime
 
@@ -152,7 +153,6 @@ class DBHandler:
         
         quiz = self.session.query(Quiz).filter(Quiz.user_id == user_id).filter(Quiz.terminated == False).one()
         return quiz
-        
 
     def close_connection(self):
         self.conn.close()
@@ -165,17 +165,56 @@ class DBHandler:
     def add_correct_answer(self, user_id):
         quiz = self.session.query(Quiz).filter(Quiz.user_id == user_id).filter(Quiz.terminated == False).one()
         quiz.correct_answers += 1
+        self.increment_streak(user_id)
         self.session.commit()
 
     def add_wrong_answer(self, user_id):
         quiz = self.session.query(Quiz).filter(Quiz.user_id == user_id).filter(Quiz.terminated == False).one()
         quiz.wrong_answers += 1
+        self.reset_streak(user_id)
         self.session.commit()
     
     def add_not_answered(self, user_id):
         quiz = self.session.query(Quiz).filter(Quiz.user_id == user_id).filter(Quiz.terminated == False).one()
         quiz.not_answered += 1
+        self.reset_streak(user_id)
         self.session.commit()
+
+    def reset_streak(self, user_id):
+        user = self.session.query(User).filter(User.user_id == user_id).one()
+        user.streak = 0
+        self.session.commit()
+
+    def increment_streak(self, user_id):
+        user = self.session.query(User).filter(User.user_id == user_id).one()
+        user.streak += 1
+        self.session.commit()
+
+    def get_streak(self, user_id):
+        user = self.session.query(User).filter(User.user_id == user_id).one()
+        return user.streak
+    
+    def get_quiz_stats(self, user_id):
+        #return the percentage of correct, wrong and not given answers
+        quiz = self.session.query(Quiz).filter(Quiz.user_id == user_id).filter(Quiz.terminated == False).one()
+
+        total = quiz.correct_answers + quiz.wrong_answers + quiz.not_answered
+
+        if total == 0:
+            return 0, 0, 0
+        
+        return quiz.correct_answers / total * 100, quiz.wrong_answers / total * 100, quiz.not_answered / total * 100
+
+    def get_all_quizzes_stats_for_user(self,user_id):
+
+        qry = self.session.query(func.sum(Quiz.correct_answers).label("correct"), func.sum(Quiz.wrong_answers).label("wrong"), func.sum(Quiz.not_answered).label("notgiven")).filter(Quiz.user_id == user_id).filter(Quiz.terminated == True).one()
+
+        total = qry.correct + qry.wrong + qry.notgiven
+
+        if total == 0:
+            return 0, 0, 0
+
+        return qry.correct / total * 100, qry.wrong / total * 100, qry.notgiven / total * 100
 
     def __del__(self):
         self.session.close()

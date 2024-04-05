@@ -23,6 +23,7 @@ bot = telebot.TeleBot(api_key, exception_handler=exceptionHandler.ExceptionHandl
 db = dbHandler.DBHandler('pIm-a-bot.db')
 qh = quizHandler.QuizHandler(db, bot)
 spammer = spamHandler.spamHandler(bot, db)
+spammer = spamHandler.spamHandler(bot, db)
 
 db.create_connection()
 
@@ -38,8 +39,8 @@ def start_bot(message):
         bot.send_message(message.from_user.id, motd_content)
         # TODO: Add a motd controller to customize the motd (something like a jinja template engine)
 
-    except Exception as e:
-        print(e)
+    except Exception as ex:
+        print(ex)
         print("WARNING: No motd file found")
         bot.reply_to(message,
                      "The bot is having some issues, please try again later or contact the bot's administrator")
@@ -49,8 +50,8 @@ def start_bot(message):
 def leave_match(message):
     try:
         db.end_match(message.from_user.id)
-    except Exception as e:
-        if isinstance(e, NoResultFound):
+    except Exception as ex:
+        if isinstance(ex, NoResultFound):
             bot.send_message(message.from_user.id, "Non stai compilando alcun quiz")
             return
         bot.send_message(message.from_user.id, "500 - Internal Error")
@@ -67,11 +68,11 @@ def unregister(message):
 
 @bot.message_handler(commands=['spam'])
 def spam(message):
-    if (str(message.from_user.id) == admin_id):
+    if str(message.from_user.id) == admin_id:
         text = message.text
         text = text.replace('/spam', '')
 
-        if (text == ''):
+        if text == '':
             bot.reply_to(message, "Devi inserire un messaggio da inviare!")
             return
 
@@ -93,10 +94,10 @@ def start_match(message):
     try:
         db.start_quiz(message.from_user.id, message.text[1:])
 
-    except Exception as e:
+    except Exception as ex:
 
         db.rollback()
-        if isinstance(e, IntegrityError):
+        if isinstance(ex, IntegrityError):
 
             bot.send_message(message.from_user.id,
                              "Stai giá compilando un quiz! Usa /leave per abbandonarlo e iniziarne un altro")
@@ -110,14 +111,14 @@ def start_match(message):
 @bot.message_handler(func=lambda message: True)
 def response(message):
     try:
-        if(qh.handle_question(message, True)):
+        if qh.handle_question(message, True):
             qh.handle_question(message)
         else:
             bot.send_message(message.from_user.id, "Riprova")
-    except Exception as e:
+    except Exception as ex:
         db.rollback()
-        print(e)
-        if(isinstance(e, NoResultFound)):
+        print(ex)
+        if isinstance(ex, NoResultFound):
             bot.send_message(message.from_user.id, "Non ho capito, usa /start per vedere i quiz disponibili")
             return
         bot.send_message(message.from_user.id, "500 - Internal Error")
