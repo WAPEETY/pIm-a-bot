@@ -197,15 +197,22 @@ class QuizHandler:
         keyboard = telebot.types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True, one_time_keyboard=True)
         for i, answer in enumerate(question['answers']):
             keyboard.add(telebot.types.InlineKeyboardButton(text=str(i + 1)))
+
+        keyboard.add(telebot.types.InlineKeyboardButton(text="Passa"))
                
         self.bot.send_message(message.from_user.id, "Scegli la risposta", reply_markup=keyboard)
 
     def check_question(self, message, question):
+
         try:
             answer = int(message.text)
         except ValueError:
-            self.bot.send_message(message.from_user.id, "Risposta non valida")
-            return False
+            #this is the worst way to handle this, but I'm too lazy to do it properly
+            if message.text == "Passa":
+                answer = 0
+            else:
+                self.bot.send_message(message.from_user.id, "Risposta non valida")
+                return False
 
         if (answer == 0):
             self.db.add_not_answered(message.from_user.id)
