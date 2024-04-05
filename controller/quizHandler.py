@@ -84,15 +84,19 @@ class QuizHandler:
             try:
                 if question is not None:
                     if (resp):
-                        self.check_question(message, question)
+                        if not self.check_question(message, question):
+                            return False
+                        return True
                     else:
                         self.send_question(message, question)
+                        return True
             except Exception as e:
                 print(e)
                 self.bot.send_message(message.from_user.id, "404 - File not found")
-                return
+                return False
         else:
             self.bot.send_message(message.from_user.id, "500 - Errore nella gestione del quiz")
+            return False
 
     def analyze_question(self, question):
 

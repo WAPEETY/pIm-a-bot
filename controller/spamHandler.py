@@ -10,7 +10,8 @@ class spamHandler:
         users = self.db.get_all_users()
         for user in users:
             try:
-                self.bot.send_message(user[0], text)
+                print("Sending message to user " + str(user))
+                self.bot.send_message(user.user_id, text)
                 time.sleep(0.5)
             except:
-                print("Couldn't send message to user " + str(user[0]))
+                print("Couldn't send message to user " + str(user))
