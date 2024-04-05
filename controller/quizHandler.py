@@ -39,7 +39,6 @@ def has_answer_image(answers):
 
 
 def analyze_question(question):
-
     """
     JSON structure:
     {
@@ -218,7 +217,11 @@ class QuizHandler:
             self.bot.send_message(message.from_user.id, "🟡 La risposta corretta era la " + str(1 + question['correct']))
         elif question['correct'] == answer - 1:
             self.db.add_correct_answer(message.from_user.id)
-            self.bot.send_message(message.from_user.id, "✅ Risposta corretta!")
+            correct, wrong, not_answered = self.db.get_quiz_stats(message.from_user.id)
+            self.bot.send_message(message.from_user.id, "✅ Risposta corretta!"
+                                                        "\n<code>Correttezza: " + str(round(correct, 2))
+                                  + "%</code>\n<code>Streak attuale: " + str(self.db.get_streak(message.from_user.id))
+                                  + "</code>", parse_mode='html')
         else:
             self.db.add_wrong_answer(message.from_user.id)
             self.bot.send_message(message.from_user.id,
