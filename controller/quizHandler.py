@@ -214,14 +214,14 @@ class QuizHandler:
                 self.bot.send_message(message.from_user.id, "Risposta non valida")
                 return False
 
-        if (answer == 0):
+        if answer == 0:
             self.db.add_not_answered(message.from_user.id)
-            self.bot.send_message(message.from_user.id, "Non risposto")
-        elif (question['correct'] == answer):
+            self.bot.send_message(message.from_user.id, "🟡 La risposta corretta era la " + str(1 + question['correct']))
+        elif question['correct'] == answer - 1:
             self.db.add_correct_answer(message.from_user.id)
-            self.bot.send_message(message.from_user.id, "Corretto")
+            self.bot.send_message(message.from_user.id, "✅ Risposta corretta!")
         else:
             self.db.add_wrong_answer(message.from_user.id)
-            self.bot.send_message(message.from_user.id, "Sbagliato")
+            self.bot.send_message(message.from_user.id, "❌ Risposta errata. La risposta corretta era la " + str(1 + question['correct']))
 
         return True
