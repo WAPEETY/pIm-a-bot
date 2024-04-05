@@ -210,6 +210,10 @@ class DBHandler:
         qry = self.session.query(func.sum(Quiz.correct_answers).label("correct"), func.sum(Quiz.wrong_answers).label("wrong"), func.sum(Quiz.not_answered).label("notgiven")).filter(Quiz.user_id == user_id).filter(Quiz.terminated == True).one()
 
         total = qry.correct + qry.wrong + qry.notgiven
+
+        if total == 0:
+            return 0, 0, 0
+
         return qry.correct / total * 100, qry.wrong / total * 100, qry.notgiven / total * 100
 
     def __del__(self):
