@@ -2,6 +2,7 @@ import json
 import re
 import random
 import base64
+import telebot
 
 question_type_enum = {
     "text": 0,
@@ -192,6 +193,12 @@ class QuizHandler:
                     self.send_multipart_message(message, str(i + 1) + ") " + answer['text'], max_length)
                 else:
                     self.decode_and_send_image(message, answer['image'], str(i + 1) + ")", max_length_image)
+
+        keyboard = telebot.types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True, one_time_keyboard=True)
+        for i, answer in enumerate(question['answers']):
+            keyboard.add(telebot.types.InlineKeyboardButton(text=str(i + 1)))
+               
+        self.bot.send_message(message.from_user.id, "Scegli la risposta", reply_markup=keyboard)
 
     def check_question(self, message, question):
         try:
