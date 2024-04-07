@@ -31,7 +31,7 @@ Il bot accetta le domande nel seguente formato JSON:
             "image": "base64 image"
          }
       ],
-      "correct": 1
+      "correct": 0
    },
    {
       "quest": "Second question without image",
@@ -46,7 +46,7 @@ Il bot accetta le domande nel seguente formato JSON:
             "image": ""
          }
       ],
-      "correct": 2
+      "correct": 1
    }
 ]
 ```
