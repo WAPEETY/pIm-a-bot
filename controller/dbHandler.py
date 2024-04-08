@@ -112,9 +112,10 @@ class DBHandler:
             user = User(user_id=user_id, registration_date=datetime.now(), streak=0)
             self.session.add(user)
             self.session.commit()
+            return True
         except IntegrityError:
             self.session.rollback()
-            return "User already exists"
+            return False
 
     def start_quiz(self, user_id, quiz_filename):          
         quiz = Quiz(user_id=user_id, filename=quiz_filename, correct_answers=0, wrong_answers=0, not_answered=0, terminated=False)
@@ -138,13 +139,11 @@ class DBHandler:
         self.session.commit()
         
     def is_in_quiz(self, user_id):
-        try:
-            quiz = self.session.query(Quiz).filter(Quiz.user_id == user_id).one()
-            print(not quiz.terminated)
-            return not quiz.terminated
-        except NoResultFound:
-            self.session.rollback()
-            return "404 - not found"
+        quiz = self.session.query(Quiz).filter(Quiz.user_id == user_id).filter(Quiz.terminated == False).one()
+
+        if(quiz):
+            return True
+        return False        
         
     def rollback(self):
         self.session.rollback()

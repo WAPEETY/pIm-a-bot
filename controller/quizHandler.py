@@ -70,9 +70,10 @@ class QuizHandler:
         # "ans": [ 1, 2, 3, 4]
     }
 
-    def __init__(self, db, bot):
+    def __init__(self, db, bot, admin):
         self.db = db
         self.bot = bot
+        self.admin = admin
 
     def add_entry_to_dic_pick(self, user_id, id_question):
         if user_id in self.dic_pick:
@@ -127,9 +128,11 @@ class QuizHandler:
             except Exception as e:
                 print(e)
                 self.bot.send_message(message.from_user.id, "404 - File not found")
+                self.admin.send_error("Errore nella domanda: " + str(e))
                 return False
         else:
             self.bot.send_message(message.from_user.id, "500 - Errore nella gestione del quiz")
+            self.admin.send_error("Errore nella gestione del quiz, filename = None")
             return False
 
     def decode_and_send_image(self, message, image, caption, max_length):
@@ -159,6 +162,7 @@ class QuizHandler:
 
         else:
             self.bot.send_message(message.from_user.id, "500 - Internal Error")
+            self.admin.send_error("Errore nella gestione della domanda, tipo di domanda non valido")
             return
 
         # type 0: send all the buffer

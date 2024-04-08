@@ -7,7 +7,7 @@ from sqlalchemy.orm.exc import NoResultFound
 import controller.dbHandler as dbHandler
 import controller.quizHandler as quizHandler
 import controller.exceptionHandler as exceptionHandler
-import controller.spamHandler as spamHandler
+import controller.adminHandler as adminHandler
 
 # configuration available both from the env file and in the environment variables
 try:
@@ -21,16 +21,15 @@ except Exception as e:
 
 bot = telebot.TeleBot(api_key, exception_handler=exceptionHandler.ExceptionHandler())
 db = dbHandler.DBHandler('pIm-a-bot.db')
-qh = quizHandler.QuizHandler(db, bot)
-spammer = spamHandler.spamHandler(bot, db)
+admin = adminHandler.adminHandler(bot, db, admin_id)
+qh = quizHandler.QuizHandler(db, bot, admin)
 
 db.create_connection()
 
 
 @bot.message_handler(commands=['start'])
-def start_bot(message):
+def start_bot(message):    
     db.add_user_if_not_exists(message.from_user.id)
-
     try:
 
         with open('data/config/motd.txt', 'r') as motd:
@@ -76,7 +75,7 @@ def spam(message):
             return
 
         text = text[1:]
-        spammer.spam(text)
+        admin.spam(text)
 
 
 cmds = []
