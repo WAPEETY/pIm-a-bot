@@ -195,15 +195,15 @@ class DBHandler:
         return user.streak
     
     def get_quiz_stats(self, user_id):
-        #return the percentage of correct, wrong and not given answers
+        #return the percentage of correct, wrong, not given answers and the number of correct, wrong, not given answers
         quiz = self.session.query(Quiz).filter(Quiz.user_id == user_id).filter(Quiz.terminated == False).one()
 
         total = quiz.correct_answers + quiz.wrong_answers + quiz.not_answered
 
         if total == 0:
-            return 0, 0, 0
+            return 0, 0, 0, 0, 0, 0
         
-        return quiz.correct_answers / total * 100, quiz.wrong_answers / total * 100, quiz.not_answered / total * 100
+        return quiz.correct_answers / total * 100, quiz.wrong_answers / total * 100, quiz.not_answered / total * 100, quiz.correct_answers, quiz.wrong_answers, quiz.not_answered
 
     def get_all_quizzes_stats_for_user(self,user_id):
 

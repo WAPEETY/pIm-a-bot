@@ -202,7 +202,6 @@ class QuizHandler:
         self.bot.send_message(message.from_user.id, "Scegli la risposta", reply_markup=keyboard)
 
     def check_question(self, message, question):
-
         try:
             answer = int(message.text)
         except ValueError:
@@ -213,18 +212,22 @@ class QuizHandler:
                 self.bot.send_message(message.from_user.id, "Risposta non valida")
                 return False
 
+        response = ""
         if answer == 0:
             self.db.add_not_answered(message.from_user.id)
-            self.bot.send_message(message.from_user.id, "🟡 La risposta corretta era la " + str(1 + question['correct']))
+            response += "🟡 La risposta corretta era la " + str(1 + question['correct']) + "\n"
         elif question['correct'] == answer - 1:
             self.db.add_correct_answer(message.from_user.id)
-            correct, wrong, not_answered = self.db.get_quiz_stats(message.from_user.id)
-            self.bot.send_message(message.from_user.id, "✅ Risposta corretta!"
-                                                        "\n<code>Correttezza: " + str(round(correct, 2))
-                                  + "%</code>\n<code>Streak attuale: " + str(self.db.get_streak(message.from_user.id))
-                                  + "</code>", parse_mode='html')
+            response += "✅ Risposta corretta!\n<code>Streak attuale: " + str(self.db.get_streak(message.from_user.id)) + "</code>\n"
         else:
             self.db.add_wrong_answer(message.from_user.id)
-            self.bot.send_message(message.from_user.id,
-                                  "❌ Risposta errata. La risposta corretta era la " + str(1 + question['correct']))
+            response += "❌ Risposta errata. La risposta corretta era la " + str(1 + question['correct']) + "\n"
+
+        p_correct, _, _, correct, wrong, not_answered = self.db.get_quiz_stats(message.from_user.id)
+        total = correct + wrong + not_answered
+        response += ("<code>Correttezza: " + str(round(p_correct, 2)) +
+                     "% (" + str(correct) + " / " + str(total) +
+                     ")</code>")
+
+        self.bot.send_message(message.from_user.id, response, parse_mode='html')
         return True
