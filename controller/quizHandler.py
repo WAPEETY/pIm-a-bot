@@ -38,6 +38,18 @@ def has_answer_image(answers):
     return False
 
 
+def is_multi_answer(question):
+    """Returns True if the question has multiple correct answers (correct is a list)."""
+    return isinstance(question['correct'], list)
+
+
+def format_correct_answers(question):
+    """Returns a human-readable string of the correct answer(s) (1-indexed)."""
+    if is_multi_answer(question):
+        return ', '.join(str(i + 1) for i in question['correct'])
+    return str(1 + question['correct'])
+
+
 def analyze_question(question):
     """
     JSON structure:
@@ -51,7 +63,7 @@ def analyze_question(question):
                 "image": "base64image"
             }
         ],
-        "correct": 1, (starting from 0)
+        "correct": 1, (starting from 0, or a list e.g. [0, 2] for multi-answer)
     }
     """
 
@@ -69,6 +81,10 @@ class QuizHandler:
         # "user_id": "your_user_id",
         # "ans": [ 1, 2, 3, 4]
     }
+
+    # Tracks selected answer indices for multi-answer questions
+    # { user_id: set of 0-indexed answer indices }
+    dic_selection = {}
 
     def __init__(self, db, bot, admin):
         self.db = db
@@ -119,9 +135,10 @@ class QuizHandler:
             try:
                 if question is not None:
                     if resp:
-                        if not self.check_question(message, question):
-                            return False
-                        return True
+                        # All answers are handled via inline callbacks now
+                        self.bot.send_message(message.from_user.id,
+                                              "Usa i pulsanti per rispondere")
+                        return False
                     else:
                         self.send_question(message, question)
                         return True
@@ -138,14 +155,14 @@ class QuizHandler:
     def decode_and_send_image(self, message, image, caption, max_length):
         image = base64.b64decode(image)
         if len(caption) > max_length:
-            self.bot.send_photo(message.from_user.id, image)
+            self.bot.send_photo(message.chat.id, image)
             self.send_multipart_message(message, caption, max_length)
         else:
-            self.bot.send_photo(message.from_user.id, image, caption=caption)
+            self.bot.send_photo(message.chat.id, image, caption=caption)
 
     def send_multipart_message(self, message, buffer, max_length):
         for i in range(0, len(buffer), max_length):
-            self.bot.send_message(message.from_user.id, buffer[i:i + max_length], parse_mode='html')
+            self.bot.send_message(message.chat.id, buffer[i:i + max_length], parse_mode='html')
 
     def send_question(self, message, question):
         qtype = analyze_question(question)
@@ -161,7 +178,7 @@ class QuizHandler:
             buffer = question['quest']
 
         else:
-            self.bot.send_message(message.from_user.id, "500 - Internal Error")
+            self.bot.send_message(message.chat.id, "500 - Internal Error")
             self.admin.send_error("Errore nella gestione della domanda, tipo di domanda non valido")
             return
 
@@ -196,38 +213,162 @@ class QuizHandler:
                 else:
                     self.decode_and_send_image(message, answer['image'], str(i + 1) + ")", max_length_image)
 
-        # send the keyboard
-        keyboard = telebot.types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True, one_time_keyboard=True)
-        for i, answer in enumerate(question['answers']):
-            keyboard.add(telebot.types.InlineKeyboardButton(text=str(i + 1)))
-
-        keyboard.add(telebot.types.InlineKeyboardButton(text="Passa"))
-
-        self.bot.send_message(message.from_user.id, "Scegli la risposta", reply_markup=keyboard)
-
-    def check_question(self, message, question):
-        try:
-            answer = int(message.text)
-        except ValueError:
-            # this is the worst way to handle this, but I'm too lazy to do it properly
-            if message.text == "Passa":
-                answer = 0
-            else:
-                self.bot.send_message(message.from_user.id, "Risposta non valida")
-                return False
-
-        if answer == 0:
-            self.db.add_not_answered(message.from_user.id)
-            self.bot.send_message(message.from_user.id, "🟡 La risposta corretta era la " + str(1 + question['correct']))
-        elif question['correct'] == answer - 1:
-            self.db.add_correct_answer(message.from_user.id)
-            correct, wrong, not_answered = self.db.get_quiz_stats(message.from_user.id)
-            self.bot.send_message(message.from_user.id, "✅ Risposta corretta!"
-                                                        "\n<code>Correttezza: " + str(round(correct, 2))
-                                  + "%</code>\n<code>Streak attuale: " + str(self.db.get_streak(message.from_user.id))
-                                  + "</code>", parse_mode='html')
+        # send the inline keyboard
+        if is_multi_answer(question):
+            self.dic_selection[message.chat.id] = set()
+            prompt = "Seleziona le risposte corrette e poi premi Conferma ✅"
         else:
-            self.db.add_wrong_answer(message.from_user.id)
-            self.bot.send_message(message.from_user.id,
-                                  "❌ Risposta errata. La risposta corretta era la " + str(1 + question['correct']))
-        return True
+            prompt = "Scegli la risposta"
+
+        keyboard = self._build_keyboard(question, message.chat.id)
+        self.bot.send_message(message.chat.id, prompt, reply_markup=keyboard)
+
+    def _build_keyboard(self, question, user_id):
+        """Builds an InlineKeyboardMarkup for any question type."""
+        keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
+
+        if is_multi_answer(question):
+            # Multi-answer: toggle buttons + confirm
+            selected = self.dic_selection.get(user_id, set())
+            for i, answer in enumerate(question['answers']):
+                icon = "✅" if i in selected else "⬜"
+                keyboard.add(telebot.types.InlineKeyboardButton(
+                    text=icon + " " + str(i + 1) + ". " + answer['text'],
+                    callback_data="toggle_" + str(i)
+                ))
+            keyboard.add(telebot.types.InlineKeyboardButton(
+                text="Conferma ✅", callback_data="confirm"))
+        else:
+            # Single-answer: direct answer buttons (instant confirm on click)
+            for i, answer in enumerate(question['answers']):
+                keyboard.add(telebot.types.InlineKeyboardButton(
+                    text=str(i + 1) + ". " + answer['text'],
+                    callback_data="answer_" + str(i)
+                ))
+
+        keyboard.add(telebot.types.InlineKeyboardButton(
+            text="Passa 🟡", callback_data="skip"))
+        return keyboard
+
+    def handle_callback(self, call):
+        """Handles inline button presses for all question types."""
+        user_id = call.from_user.id
+
+        try:
+            quiz = self.db.get_quiz(user_id)
+        except Exception:
+            self.bot.answer_callback_query(call.id, "Non stai compilando alcun quiz")
+            return
+
+        filename = sanitize_filename(quiz.filename)
+        if filename is None:
+            self.bot.answer_callback_query(call.id, "Errore")
+            return
+
+        question = self.open_file_and_get_question(filename,
+                                                   quest_id=quiz.last_question,
+                                                   user_id=user_id)
+
+        data = call.data
+
+        if data.startswith("answer_"):
+            # Single-answer: instant confirm
+            idx = int(data.split("_")[1])
+            if question['correct'] == idx:
+                self.db.add_correct_answer(user_id)
+                correct, wrong, not_answered = self.db.get_quiz_stats(user_id)
+                self.bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="✅ Risposta corretta!"
+                         "\n<code>Correttezza: " + str(round(correct, 2))
+                         + "%</code>\n<code>Streak attuale: " + str(self.db.get_streak(user_id))
+                         + "</code>",
+                    parse_mode='html'
+                )
+            else:
+                self.db.add_wrong_answer(user_id)
+                self.bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="❌ Risposta errata. La risposta corretta era la " + format_correct_answers(question)
+                )
+            self.bot.answer_callback_query(call.id)
+            self._send_next_question(call, user_id)
+
+        elif data.startswith("toggle_"):
+            # Multi-answer: toggle selection
+            idx = int(data.split("_")[1])
+            selected = self.dic_selection.setdefault(user_id, set())
+            if idx in selected:
+                selected.discard(idx)
+            else:
+                selected.add(idx)
+            new_keyboard = self._build_keyboard(question, user_id)
+            try:
+                self.bot.edit_message_reply_markup(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=new_keyboard
+                )
+            except Exception:
+                pass
+            self.bot.answer_callback_query(call.id)
+
+        elif data == "confirm":
+            # Multi-answer: confirm selection
+            selected = self.dic_selection.pop(user_id, set())
+            correct_set = set(question['correct'])
+
+            if len(selected) == 0:
+                self.db.add_not_answered(user_id)
+                self.bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="🟡 Le risposte corrette erano: " + format_correct_answers(question)
+                )
+            elif selected == correct_set:
+                self.db.add_correct_answer(user_id)
+                correct, wrong, not_answered = self.db.get_quiz_stats(user_id)
+                self.bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="✅ Risposta corretta!"
+                         "\n<code>Correttezza: " + str(round(correct, 2))
+                         + "%</code>\n<code>Streak attuale: " + str(self.db.get_streak(user_id))
+                         + "</code>",
+                    parse_mode='html'
+                )
+            else:
+                self.db.add_wrong_answer(user_id)
+                self.bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="❌ Risposta errata. Le risposte corrette erano: " + format_correct_answers(question)
+                )
+
+            self.bot.answer_callback_query(call.id)
+            self._send_next_question(call, user_id)
+
+        elif data == "skip":
+            self.dic_selection.pop(user_id, None)
+            self.db.add_not_answered(user_id)
+            self.bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text="🟡 La risposta corretta era: " + format_correct_answers(question)
+            )
+            self.bot.answer_callback_query(call.id)
+            self._send_next_question(call, user_id)
+
+    def _send_next_question(self, call, user_id):
+        """Helper to send the next question after a callback."""
+        try:
+            quiz = self.db.get_quiz(user_id)
+            filename = sanitize_filename(quiz.filename)
+            if filename is not None:
+                question = self.open_file_and_get_question(filename, user_id=user_id)
+                if question is not None:
+                    self.send_question(call.message, question)
+        except Exception as e:
+            print(e)

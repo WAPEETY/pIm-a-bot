@@ -106,6 +106,11 @@ def start_match(message):
     qh.handle_question(message)
 
 
+@bot.callback_query_handler(func=lambda call: True)
+def callback_handler(call):
+    qh.handle_callback(call)
+
+
 @bot.message_handler(func=lambda message: True)
 def response(message):
     try:
