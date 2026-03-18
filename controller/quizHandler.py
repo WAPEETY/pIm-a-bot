@@ -40,11 +40,18 @@ def has_answer_image(answers):
 
 def is_multi_answer(question):
     """Returns True if the question has multiple correct answers (correct is a list)."""
-    return isinstance(question['correct'], list)
+    return 'correct' in question and isinstance(question['correct'], list)
+
+
+def is_open_question(question):
+    """Returns True if the question is an open question (has open_answer field)."""
+    return 'open_answer' in question
 
 
 def format_correct_answers(question):
     """Returns a human-readable string of the correct answer(s) (1-indexed)."""
+    if is_open_question(question):
+        return question['open_answer']
     if is_multi_answer(question):
         return ', '.join(str(i + 1) for i in question['correct'])
     return str(1 + question['correct'])
@@ -70,7 +77,7 @@ def analyze_question(question):
     qtype = 0
     if question['image'] != "":
         qtype += 1
-    if has_answer_image(question['answers']):
+    if not is_open_question(question) and has_answer_image(question['answers']):
         qtype += 2
 
     return qtype
@@ -167,7 +174,10 @@ class QuizHandler:
     def send_question(self, message, question):
         qtype = analyze_question(question)
 
-        if qtype == question_type_enum["text"] or qtype == question_type_enum["image_in_question"]:
+        if is_open_question(question):
+            # Open question: just show the question text (no answer choices)
+            buffer = question['quest']
+        elif qtype == question_type_enum["text"] or qtype == question_type_enum["image_in_question"]:
             buffer = question['quest']
 
             for i, answer in enumerate(question['answers']):
@@ -182,17 +192,18 @@ class QuizHandler:
             self.admin.send_error("Errore nella gestione della domanda, tipo di domanda non valido")
             return
 
-        # type 0: send all the buffer
-        # type 1: send the buffer as the caption of the photo
-        # type 2: send the buffer as a message and each answer as a photo with the number as caption
-        # type 3: send the buffer as the caption of the photo and each answer as a photo with the number as caption
         max_length = 3000  # 4096
         max_length_image = 715  # 1024
 
         buffer = sanitize_html(buffer)
 
-        if qtype == question_type_enum["text"]:
-            # send the buffer as n messages if the length is greater than max_length
+        if is_open_question(question):
+            # Open question: just send the question text
+            if question['image'] != "":
+                self.decode_and_send_image(message, question['image'], buffer, max_length)
+            else:
+                self.send_multipart_message(message, buffer, max_length)
+        elif qtype == question_type_enum["text"]:
             self.send_multipart_message(message, buffer, max_length)
 
         elif qtype == question_type_enum["image_in_question"]:
@@ -203,7 +214,6 @@ class QuizHandler:
 
             if qtype == question_type_enum["image_in_answer"]:
                 self.send_multipart_message(message, buffer, max_length)
-                # send the buffer as a message and each answer as a photo with the number as caption
             else:
                 self.decode_and_send_image(message, question['image'], buffer, max_length)
 
@@ -214,7 +224,9 @@ class QuizHandler:
                     self.decode_and_send_image(message, answer['image'], str(i + 1) + ")", max_length_image)
 
         # send the inline keyboard
-        if is_multi_answer(question):
+        if is_open_question(question):
+            prompt = "Pensa alla risposta, poi premi per rivelarla 👁"
+        elif is_multi_answer(question):
             self.dic_selection[message.chat.id] = set()
             prompt = "Seleziona le risposte corrette e poi premi Conferma ✅"
         else:
@@ -227,7 +239,11 @@ class QuizHandler:
         """Builds an InlineKeyboardMarkup for any question type."""
         keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
 
-        if is_multi_answer(question):
+        if is_open_question(question):
+            # Open question: reveal answer button
+            keyboard.add(telebot.types.InlineKeyboardButton(
+                text="Mostra risposta 👁", callback_data="reveal"))
+        elif is_multi_answer(question):
             # Multi-answer: toggle buttons + confirm
             selected = self.dic_selection.get(user_id, set())
             for i, answer in enumerate(question['answers']):
@@ -296,6 +312,50 @@ class QuizHandler:
             self.bot.answer_callback_query(call.id)
             self._send_next_question(call, user_id)
 
+        elif data == "reveal":
+            # Open question: reveal the answer and show correct/wrong buttons
+            answer_text = sanitize_html(question['open_answer'])
+            grading_keyboard = telebot.types.InlineKeyboardMarkup(row_width=2)
+            grading_keyboard.row(
+                telebot.types.InlineKeyboardButton(text="Corretto ✅", callback_data="mark_correct"),
+                telebot.types.InlineKeyboardButton(text="Sbagliato ❌", callback_data="mark_wrong")
+            )
+            self.bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text="💡 <b>Risposta:</b>\n" + answer_text,
+                parse_mode='html',
+                reply_markup=grading_keyboard
+            )
+            self.bot.answer_callback_query(call.id)
+
+        elif data == "mark_correct":
+            # Open question: self-graded as correct
+            self.db.add_correct_answer(user_id)
+            correct, wrong, not_answered = self.db.get_quiz_stats(user_id)
+            self.bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text="✅ Segnata come corretta!"
+                     "\n<code>Correttezza: " + str(round(correct, 2))
+                     + "%</code>\n<code>Streak attuale: " + str(self.db.get_streak(user_id))
+                     + "</code>",
+                parse_mode='html'
+            )
+            self.bot.answer_callback_query(call.id)
+            self._send_next_question(call, user_id)
+
+        elif data == "mark_wrong":
+            # Open question: self-graded as wrong
+            self.db.add_wrong_answer(user_id)
+            self.bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text="❌ Segnata come errata."
+            )
+            self.bot.answer_callback_query(call.id)
+            self._send_next_question(call, user_id)
+
         elif data.startswith("toggle_"):
             # Multi-answer: toggle selection
             idx = int(data.split("_")[1])
@@ -353,10 +413,14 @@ class QuizHandler:
         elif data == "skip":
             self.dic_selection.pop(user_id, None)
             self.db.add_not_answered(user_id)
+            if is_open_question(question):
+                text = "🟡 Risposta saltata. La risposta era:\n" + sanitize_html(question['open_answer'])
+            else:
+                text = "🟡 La risposta corretta era: " + format_correct_answers(question)
             self.bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
-                text="🟡 La risposta corretta era: " + format_correct_answers(question)
+                text=text
             )
             self.bot.answer_callback_query(call.id)
             self._send_next_question(call, user_id)
