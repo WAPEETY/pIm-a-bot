@@ -47,6 +47,19 @@ class DBVersion(Base):
     def __repr__(self):
         return "<DBVersion(version='%s')>" % (self.version)
 
+class QuestionStats(Base):
+    """Tracks per-question Leitner box level for spaced repetition."""
+    __tablename__ = 'question_stats'
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.user_id'), nullable=False)
+    filename = Column(String, nullable=False)
+    question_index = Column(Integer, nullable=False)
+    box = Column(Integer, default=0)  # 0-3, higher = more mastered
+
+    def __repr__(self):
+        return "<QuestionStats(user_id='%s', filename='%s', question_index=%s, box=%s)>" % \
+            (self.user_id, self.filename, self.question_index, self.box)
+
 class DBHandler:
     def __init__(self, db_name):
         self.db_name = db_name
@@ -112,9 +125,10 @@ class DBHandler:
             user = User(user_id=user_id, registration_date=datetime.now(), streak=0)
             self.session.add(user)
             self.session.commit()
+            return True
         except IntegrityError:
             self.session.rollback()
-            return "User already exists"
+            return False
 
     def start_quiz(self, user_id, quiz_filename):          
         quiz = Quiz(user_id=user_id, filename=quiz_filename, correct_answers=0, wrong_answers=0, not_answered=0, terminated=False)
@@ -124,6 +138,7 @@ class DBHandler:
 
     def delete_user(self, user_id):
         #since SQLite is shit and doesn't seem to support ON DELETE CASCADE we have to do this manually
+        self.session.query(QuestionStats).filter(QuestionStats.user_id == user_id).delete()
         self.session.query(Quiz).filter(Quiz.user_id == user_id).delete()
         self.session.query(User).filter(User.user_id == user_id).delete()
         
@@ -138,13 +153,11 @@ class DBHandler:
         self.session.commit()
         
     def is_in_quiz(self, user_id):
-        try:
-            quiz = self.session.query(Quiz).filter(Quiz.user_id == user_id).one()
-            print(not quiz.terminated)
-            return not quiz.terminated
-        except NoResultFound:
-            self.session.rollback()
-            return "404 - not found"
+        quiz = self.session.query(Quiz).filter(Quiz.user_id == user_id).filter(Quiz.terminated == False).one()
+
+        if(quiz):
+            return True
+        return False        
         
     def rollback(self):
         self.session.rollback()
@@ -218,3 +231,36 @@ class DBHandler:
 
     def __del__(self):
         self.session.close()
+
+    def get_question_boxes(self, user_id, filename):
+        """Returns a dict of {question_index: box} for all tracked questions."""
+        stats = self.session.query(QuestionStats).filter(
+            QuestionStats.user_id == user_id,
+            QuestionStats.filename == filename
+        ).all()
+        return {s.question_index: s.box for s in stats}
+
+    def update_question_box(self, user_id, filename, question_index, correct):
+        """Updates the box level for a question. correct=True moves up, False resets to 0."""
+        stat = self.session.query(QuestionStats).filter(
+            QuestionStats.user_id == user_id,
+            QuestionStats.filename == filename,
+            QuestionStats.question_index == question_index
+        ).first()
+
+        if stat is None:
+            # First time seeing this question
+            stat = QuestionStats(
+                user_id=user_id,
+                filename=filename,
+                question_index=question_index,
+                box=1 if correct else 0
+            )
+            self.session.add(stat)
+        else:
+            if correct:
+                stat.box = min(stat.box + 1, 3)
+            else:
+                stat.box = 0
+
+        self.session.commit()
