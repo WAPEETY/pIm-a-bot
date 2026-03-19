@@ -84,10 +84,15 @@ def analyze_question(question):
 
 
 class QuizHandler:
-    dic_pick = {
-        # "user_id": "your_user_id",
-        # "ans": [ 1, 2, 3, 4]
-    }
+    # Per-user history of recently shown question indices (ordered, most recent last)
+    # { user_id: [q_index, q_index, ...] }
+    recent_questions = {}
+
+    # Cooldown per box: how many other questions must be shown before this one can repeat
+    BOX_COOLDOWNS = {0: 3, 1: 5, 2: 10, 3: None}  # None = until all others seen
+
+    # Weights for weighted random selection
+    BOX_WEIGHTS = {0: 8, 1: 4, 2: 2, 3: 1}
 
     # Tracks selected answer indices for multi-answer questions
     # { user_id: set of 0-indexed answer indices }
@@ -98,11 +103,23 @@ class QuizHandler:
         self.bot = bot
         self.admin = admin
 
-    def add_entry_to_dic_pick(self, user_id, id_question):
-        if user_id in self.dic_pick:
-            self.dic_pick[user_id].append(id_question)
-        else:
-            self.dic_pick[user_id] = [id_question]
+    def _is_on_cooldown(self, user_id, question_index, box, total_questions):
+        """Check if a question is still on cooldown based on its box level."""
+        history = self.recent_questions.get(user_id, [])
+        if not history:
+            return False
+
+        cooldown = self.BOX_COOLDOWNS.get(box, 3)
+
+        if cooldown is None:
+            # Box 3: excluded until all other questions have been seen
+            seen = set(history)
+            unseen_others = [i for i in range(total_questions) if i != question_index and i not in seen]
+            return len(unseen_others) > 0
+
+        # Check if question appeared within the last 'cooldown' entries
+        recent_window = history[-cooldown:] if cooldown <= len(history) else history
+        return question_index in recent_window
 
     def open_file_and_get_question(self, filename, quest_id=None, user_id=None):
         filename = sanitize_filename(filename)
@@ -112,17 +129,37 @@ class QuizHandler:
 
         length = len(questions)
 
-        # if the user has already answered all the questions we reset the dic_pick
-        # so the user can answer the questions again
-        if user_id in self.dic_pick and len(self.dic_pick[user_id]) == length:
-            self.dic_pick[user_id] = []
+        if quest_id is None:
+            # Get box levels for weighted selection
+            boxes = self.db.get_question_boxes(user_id, filename) if user_id else {}
+            history = self.recent_questions.get(user_id, [])
 
-        while quest_id is None:
-            rand = random.randint(0, length - 1)
+            # Build candidates: questions not on cooldown
+            candidates = [
+                i for i in range(length)
+                if not self._is_on_cooldown(user_id, i, boxes.get(i, 0), length)
+            ]
 
-            if user_id not in self.dic_pick or (user_id in self.dic_pick and rand not in self.dic_pick[user_id]):
-                quest_id = rand
-                self.add_entry_to_dic_pick(user_id, rand)
+            if not candidates:
+                # All on cooldown, fall back to all questions
+                candidates = list(range(length))
+
+            weights = [self.BOX_WEIGHTS.get(boxes.get(i, 0), 8) for i in candidates]
+            quest_id = random.choices(candidates, weights=weights, k=1)[0]
+
+            # Hard safety guard: never pick the same question consecutively
+            if history and quest_id == history[-1] and len(candidates) > 1:
+                other_candidates = [c for c in candidates if c != quest_id]
+                other_weights = [w for c, w in zip(candidates, weights) if c != quest_id]
+                quest_id = random.choices(other_candidates, weights=other_weights, k=1)[0]
+
+            # Record in history
+            if user_id not in self.recent_questions:
+                self.recent_questions[user_id] = []
+            self.recent_questions[user_id].append(quest_id)
+
+            print(f"[QUIZ] user={user_id} file={filename} picked=Q{quest_id} "
+                  f"candidates={candidates} boxes={boxes} history_len={len(history)}")
 
         if quest_id < 0 or quest_id >= length:
             quest_id = quest_id % length
@@ -290,7 +327,8 @@ class QuizHandler:
         if data.startswith("answer_"):
             # Single-answer: instant confirm
             idx = int(data.split("_")[1])
-            if question['correct'] == idx:
+            is_correct = question['correct'] == idx
+            if is_correct:
                 self.db.add_correct_answer(user_id)
                 correct, wrong, not_answered = self.db.get_quiz_stats(user_id)
                 self.bot.edit_message_text(
@@ -309,6 +347,7 @@ class QuizHandler:
                     message_id=call.message.message_id,
                     text="❌ Risposta errata. La risposta corretta era la " + format_correct_answers(question)
                 )
+            self.db.update_question_box(user_id, filename, quiz.last_question, is_correct)
             self.bot.answer_callback_query(call.id)
             self._send_next_question(call, user_id)
 
@@ -332,6 +371,7 @@ class QuizHandler:
         elif data == "mark_correct":
             # Open question: self-graded as correct
             self.db.add_correct_answer(user_id)
+            self.db.update_question_box(user_id, filename, quiz.last_question, True)
             correct, wrong, not_answered = self.db.get_quiz_stats(user_id)
             self.bot.edit_message_text(
                 chat_id=call.message.chat.id,
@@ -348,6 +388,7 @@ class QuizHandler:
         elif data == "mark_wrong":
             # Open question: self-graded as wrong
             self.db.add_wrong_answer(user_id)
+            self.db.update_question_box(user_id, filename, quiz.last_question, False)
             self.bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
@@ -382,6 +423,7 @@ class QuizHandler:
 
             if len(selected) == 0:
                 self.db.add_not_answered(user_id)
+                self.db.update_question_box(user_id, filename, quiz.last_question, False)
                 self.bot.edit_message_text(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -389,6 +431,7 @@ class QuizHandler:
                 )
             elif selected == correct_set:
                 self.db.add_correct_answer(user_id)
+                self.db.update_question_box(user_id, filename, quiz.last_question, True)
                 correct, wrong, not_answered = self.db.get_quiz_stats(user_id)
                 self.bot.edit_message_text(
                     chat_id=call.message.chat.id,
@@ -401,6 +444,7 @@ class QuizHandler:
                 )
             else:
                 self.db.add_wrong_answer(user_id)
+                self.db.update_question_box(user_id, filename, quiz.last_question, False)
                 self.bot.edit_message_text(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -413,6 +457,7 @@ class QuizHandler:
         elif data == "skip":
             self.dic_selection.pop(user_id, None)
             self.db.add_not_answered(user_id)
+            self.db.update_question_box(user_id, filename, quiz.last_question, False)
             if is_open_question(question):
                 text = "🟡 Risposta saltata. La risposta era:\n" + sanitize_html(question['open_answer'])
             else:
